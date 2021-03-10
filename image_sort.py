@@ -7,7 +7,7 @@ from shutil import copyfile, move
 def filterImages(path=None):
     imgs = []
     filteredImages = []
-    valid_images = [".jpg", ".png", ".jpeg"]
+    valid_images = [".jpg", ".png", ".jpeg", ".jfif"]
 
     for f in os.listdir(path):
         ext = os.path.splitext(f)[1]
