@@ -11,11 +11,10 @@ def get_files_list(filetype=".txt"):
             out.append(filename)
     return out
 
-def pretty_print_story(story_string):
-    """ Print the story so that when the lines are over 50 characters
+def pretty_print_story(story_string, character_max_limit=50):
+    """ Print the story so that when the lines are over character_max_limit characters
         it goes to the next line.
     """
-    character_max_limit = 50
     story_words = story_string.split(" ")
     current_line = ""
     for word in story_words:
@@ -62,4 +61,4 @@ for i in range(len(raw_txt_data)):
         user_input_string = input(raw_txt_data[i]+": ")
         output_string += " " + user_input_string
 
-pretty_print_story(output_string)
+pretty_print_story(output_string, 50)
