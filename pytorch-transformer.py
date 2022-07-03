@@ -22,16 +22,9 @@ class MSA(torch.nn.Module):
         qkv = rearrange(qkv, 'b t (k d h) -> k b h t d', k=3, h=self.heads)  # 3 B H T D
         q, k, v = qkv.unbind(0)  # B H T D
         dots = torch.einsum('... i d , ... j d -> ... i j', q, k) * self.scale_factor  # B H T T
+        if mask is not None:
+            dots = dots.masked_fill(mask==0, -1e11)
         attn = torch.softmax(dots, dim=-1)  # B H T T
-        print(f"{attn=}")
-        # if mask is not None:
-            # if mask.dim()==2:
-            #     mask = mask.unsqueeze(0)  # Expand head dimension
-            # scores = scores.masked_fill(mask == 0, -1e9)
-            # if mask.dtype == torch.bool:
-            #     attn_output_weights.masked_fill_(mask, float('-inf'))
-            # else:
-            #     attn_output_weights += mask
         out = torch.einsum('... i j , ... j d -> ... i d', attn, v)  # B H T D
         out = rearrange(out, 'b h t d -> b t (h d)')  # B T D*H
         out = self.dropout(out)
@@ -89,32 +82,31 @@ if __name__ == "__main__":
     batch = 1
     tokens = 4
 
-    layers = 16
-    embd = 1024
+    layers = 8
+    embd = 512
     dim = 64
-    heads = 1
+    heads = 8
     ff_multi = 4
     dropout = 0.1
     
     x = torch.rand(batch, tokens, embd)
     print(f"{x.shape=}")
 
+    gen_casual_mask = lambda x: torch.tril(torch.ones(x.shape[1], x.shape[1]))
+    mask = gen_casual_mask(x)
+    print(f"{mask.shape=}")
+
     msa = MSA(embd, dim, heads, dropout)
-    mask = None
-    # b, l, e = x.size()
-    # mask = torch.tril(torch.ones(l, l))
-    # print(f"{mask=}")
-    # .view(1, l, l).repeat(b, 1, 1)
     y_msa = msa(x, mask)
     print(f"{y_msa.shape=}")
 
-    # block = ResidualAttentionBlock(embd, dim, heads, ff_multi, dropout)
-    # y_block = block(x)
-    # print(f"{y_block.shape=}")
+    block = ResidualAttentionBlock(embd, dim, heads, ff_multi, dropout)
+    y_block = block(x, mask)
+    print(f"{y_block.shape=}")
 
-    # transformer = Transformer(layers, embd, dim, heads, ff_multi, dropout)
-    # y_transformer = transformer(x)
-    # print(f"{y_transformer.shape=}")
+    transformer = Transformer(layers, embd, dim, heads, ff_multi, dropout)
+    y_transformer = transformer(x, mask)
+    print(f"{y_transformer.shape=}")
 
     # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # from torchsummary import summary
