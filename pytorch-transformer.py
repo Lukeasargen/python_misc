@@ -21,7 +21,7 @@ class MSA(torch.nn.Module):
         qkv = self.to_qkv(x)  # B T 3*D*H
         qkv = rearrange(qkv, 'b t (k d h) -> k b h t d', k=3, h=self.heads)  # 3 B H T D
         q, k, v = qkv.unbind(0)  # B H T D
-        dots = torch.einsum('... i d , ... j d -> ... i j', q, k) * self.scale_factor  # B H T T
+        dots = torch.einsum('... i d , ... j d -> ... i j', q, k).mul_(self.scale_factor)  # B H T T
         if mask is not None:
             dots = dots.masked_fill(mask==0, -1e11)
         attn = torch.softmax(dots, dim=-1)  # B H T T
@@ -94,19 +94,20 @@ if __name__ == "__main__":
 
     gen_casual_mask = lambda x: torch.tril(torch.ones(x.shape[1], x.shape[1]))
     mask = gen_casual_mask(x)
-    print(f"{mask.shape=}")
+    mask = torch.rand(tokens, tokens) < 0.75
+    print(f"{mask=}")
 
     msa = MSA(embd, dim, heads, dropout)
     y_msa = msa(x, mask)
     print(f"{y_msa.shape=}")
 
-    block = ResidualAttentionBlock(embd, dim, heads, ff_multi, dropout)
-    y_block = block(x, mask)
-    print(f"{y_block.shape=}")
+    # block = ResidualAttentionBlock(embd, dim, heads, ff_multi, dropout)
+    # y_block = block(x, mask)
+    # print(f"{y_block.shape=}")
 
-    transformer = Transformer(layers, embd, dim, heads, ff_multi, dropout)
-    y_transformer = transformer(x, mask)
-    print(f"{y_transformer.shape=}")
+    # transformer = Transformer(layers, embd, dim, heads, ff_multi, dropout)
+    # y_transformer = transformer(x, mask)
+    # print(f"{y_transformer.shape=}")
 
     # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # from torchsummary import summary
