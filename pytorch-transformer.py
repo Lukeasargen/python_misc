@@ -1,5 +1,7 @@
+from cProfile import label
 from collections import OrderedDict
 import time
+from cv2 import log
 
 from einops import rearrange
 import torch
@@ -56,18 +58,16 @@ class ResidualAttentionBlock(torch.nn.Module):
     def __init__(self, embd, dim, heads=0, ff_multi=0, dropout=0):
         super(ResidualAttentionBlock, self).__init__()
         self.ln = nn.LayerNorm(embd)
-        self.dropout = nn.Dropout(dropout)
         self.msa = MSA(embd, dim, heads, dropout) if heads>0 else None
         self.mlp = MLP(embd, ff_multi, dropout) if ff_multi>0 else None
 
     def forward(self, x, mask=None):
-        norm = self.ln(x)
+        inp = x
+        if self.msa is not None:
+            x = x + self.msa(inp, mask)
         if self.mlp is not None:
-            x = x + self.msa(norm, mask)
-        if self.mlp is not None:
-            x = x + self.mlp(norm)
-        x = self.dropout(x)
-        return x
+            x = x + self.mlp(inp)
+        return self.ln(x)
 
 
 class Transformer(torch.nn.Module):
@@ -91,6 +91,7 @@ class SimpleLM(nn.Module):
         if transformer.embd != vocab_dim:
             self.embedding.add_module("enc_proj", nn.Linear(vocab_dim, transformer.embd, bias=False))
             self.head.add_module("dec_proj", nn.Linear(transformer.embd, vocab_dim, bias=False))
+        self.embedding.add_module("norm", nn.LayerNorm(transformer.embd))
         self.head.add_module("out", nn.Linear(vocab_dim, vocab_size, bias=False))
 
         if tie_weights:
@@ -101,7 +102,7 @@ class SimpleLM(nn.Module):
                     dec.weight.data = enc.weight.data.T
 
     def forward(self, token_ids, mask=None):
-        x = self.embedding(token_ids)
+        x = self.embedding(token_ids.long())
         x = transformer(x, mask)
         logits = self.head(x)
         return logits
@@ -120,7 +121,7 @@ if __name__ == "__main__":
     heads = 12
     ff_multi = 4
     dropout = 0.1
-    
+
     # x = torch.rand(batch, tokens, embd)
     # print(f"{x.shape=}")
     # mask = gen_casual_mask(x)
@@ -148,34 +149,48 @@ if __name__ == "__main__":
     lm = SimpleLM(transformer, vocab_size, vocab_dim, tie_weights)
     # logits = lm(token_ids)
     # print(f"{logits.shape=}")
+    # summary(lm, input_size=(1,), device="cpu")
+    # exit()
 
-    starter, ender = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
-    vocab_dims = [32, 64, 128, 256, 384, 512, 768, 1024]
-    with torch.no_grad():
-        for vocab_dim in vocab_dims:
-            params = vocab_dim*transformer.embd if transformer.embd!=vocab_dim else 0
-            params += vocab_dim*vocab_size
-            lm = SimpleLM(transformer, vocab_size, vocab_dim, tie_weights).to(device)
-            for i in range(10):
-                out = lm(token_ids)
-            n_iter = 35
-            start = time.time()
-            for i in range(n_iter):
-                out = lm(token_ids)
-            dt = time.time() - start
-            print(f"{vocab_dim=}. embed params={params/1e6:.1f}M. {dt/n_iter * 1e3:.3f}ms.")
+    # starter, ender = torch.cuda.Event(enable_timing=True), torch.cuda.Event(enable_timing=True)
+    # vocab_dims = [32, 64, 128, 256, 384, 512, 768, 1024]
+    # with torch.no_grad():
+    #     for vocab_dim in vocab_dims:
+    #         params = vocab_dim*transformer.embd if transformer.embd!=vocab_dim else 0
+    #         params += vocab_dim*vocab_size
+    #         lm = SimpleLM(transformer, vocab_size, vocab_dim, tie_weights).to(device)
+    #         for i in range(10):
+    #             out = lm(token_ids)
+    #         n_iter = 35
+    #         start = time.time()
+    #         for i in range(n_iter):
+    #             out = lm(token_ids)
+    #         dt = time.time() - start
+    #         print(f"{vocab_dim=}. embed params={params/1e6:.1f}M. {dt/n_iter * 1e3:.3f}ms.")
 
-    # n_iter = 8
-    # lm = lm.to(device)
-    # for b in range(1, 1024, 1):
-    #     x = torch.randint(low=0, high=vocab_size, size=(b, 512), device=device)
-    #     torch.cuda.synchronize()
-    #     start = time.time()
-    #     for _ in range(n_iter):
-    #         lm(x)
-    #     torch.cuda.synchronize()
-    #     dt = time.time() - start
-    #     throughput = b * n_iter / dt
-    #     print(f"Batch: {b} \t {throughput:6.2f} samples/sec")
-    #     del x
-    #     torch.cuda.empty_cache()
+    n_iter = 11
+    train_length = 512
+    for b in range(1, 1024):
+        data = torch.randint(low=0, high=vocab_size, size=(b, train_length), device=device)
+        labels = torch.randint(low=0, high=vocab_size, size=(b, train_length), device=device)
+        lm = SimpleLM(transformer, vocab_size, vocab_dim, tie_weights).to(device)
+        optimizer = torch.optim.AdamW(lm.parameters(), lr=1e-5, weight_decay=1e-5)
+        torch.cuda.synchronize()
+        start = time.time()
+        for i in range(n_iter):
+            logits = lm(data)
+            logits = logits.permute(0,2,1)
+            loss = nn.CrossEntropyLoss()(logits, labels)
+            # print(f"{i} {loss=}")
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(lm.parameters(), 0.3)
+            optimizer.step()
+            optimizer.zero_grad()
+        torch.cuda.synchronize()
+        dt = time.time() - start
+        throughput = train_length * b * n_iter / dt
+        print(f"Batch: {b} \t {throughput:9.1f} tokens/sec")
+        del data, labels, lm, optimizer
+        torch.cuda.empty_cache()
+        # break
+
