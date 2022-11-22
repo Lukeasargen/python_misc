@@ -35,7 +35,7 @@ for filename in possible_filenames_list:
     print("\t"+filename)
 
 # Here I get the use to choose the file
-user_txt_selection = input("What is the name of the Madlib file? ")
+user_txt_selection = input("What is the name of the Madlib file? ").strip()
 # user_txt_selection = "madlib_story_1.txt"
 # If the use doesnt put the txt, then add it
 if user_txt_selection[-4:] != ".txt":
@@ -53,7 +53,7 @@ for i in range(len(raw_txt_data)):
     # else the index value is odd, it is a input line
     if i%2==0:  # the remainder is 0 is it is even
         # if the story line has a period, then there is no space
-        if raw_txt_data[i][0] == ".":
+        if raw_txt_data[i][0] in  [".", ","]:
             output_string += raw_txt_data[i]
         else:
             output_string += " " + raw_txt_data[i]
@@ -62,3 +62,13 @@ for i in range(len(raw_txt_data)):
         output_string += " " + user_input_string
 
 pretty_print_story(output_string, 50)
+
+import pyttsx3 # pip install pyttsx3
+engine = pyttsx3.init() # object creation
+engine.setProperty('rate', 150)     # setting up new voice rate
+engine.setProperty('volume',1.0)    # setting up volume level  between 0 and 1
+engine.setProperty('voice', engine.getProperty('voices')[0].id)  #changing index, changes voices. 0 for male
+
+engine.say(output_string)
+engine.runAndWait()
+engine.stop()
