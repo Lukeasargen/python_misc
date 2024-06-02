@@ -1,0 +1,15 @@
+
+
+35 ce wd 0
+36 ce wd 1e-6
+37 ce wd 1e-5
+38 ce wd 1e-4
+39 ce wd 1e-3
+40 ce wd 1e-2
+41 linear
+42 linear wp
+43 ce linear
+44 ce linear wp
+45 ce linear positive
+46 linear wp onehot positive
+47 linear wp onehot negative
